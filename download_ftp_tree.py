@@ -1,0 +1,123 @@
+import ftplib
+import os
+import re
+
+"""
+MIT license: 2017 - Jwely
+Example usage:
+``` python
+import ftplib
+ftp = ftplib.FTP(mysite, username, password)
+download_ftp_tree(ftp, remote_dir, local_dir)
+```
+The code above will look for a directory called "remote_dir" on the ftp host, and then duplicate the
+directory and its entire contents into the "local_dir".
+*** Note that if wget is an option, I recommend using that instead ***
+"""
+
+
+def _is_ftp_dir(name):
+    """ simply determines if an item listed on the ftp server is a valid directory or not """
+    if name == 'dir':
+        return True
+    else:
+        return False
+
+
+def _make_parent_dir(fpath):
+    """ ensures the parent directory of a filepath exists """
+    dirname = os.path.dirname(fpath)
+    while not os.path.exists(dirname):
+        try:
+            os.makedirs(dirname)
+            print("created {0}".format(dirname))
+        except OSError as e:
+            print(e)
+            _make_parent_dir(dirname)
+
+
+def _download_ftp_file(ftp_handle, name, dest, overwrite):
+    """ downloads a single file from an ftp server """
+    _make_parent_dir(dest.lstrip("/"))
+    if not os.path.exists(dest) or overwrite is True:
+        try:
+            with open(dest, 'wb') as f:
+                ftp_handle.retrbinary("RETR {0}".format(name), f.write)
+            print("downloaded: {0}".format(dest))
+        except FileNotFoundError:
+            print("FAILED: {0}".format(dest))
+    else:
+        print("already exists: {0}".format(dest))
+
+
+def _file_name_match_patern(pattern, name):
+    """ returns True if filename matches the pattern"""
+    if pattern is None:
+        return True
+    else:
+        return bool(re.match(pattern, name))
+
+
+def _get_list_dirs(ftp_handle, name):
+    result = {}
+    ftp_handle.cwd(name)
+    for i in ftp_handle.mlsd():
+        if i[1]['type'] == 'dir':
+            result[i[0]] = True
+        else:
+            result[i[0]] = False
+    ftp_handle.cwd('/')
+    return result
+
+
+def _mirror_ftp_dir(ftp_handle, name, overwrite, pattern):
+    """ replicates a directory on an ftp server recursively """
+    list = _get_list_dirs(ftp_handle, name)
+    for item in list:
+        if list[item]:
+            _mirror_ftp_dir(ftp_handle, item, overwrite, pattern)
+        else:
+            if _file_name_match_patern(pattern, name):
+                _download_ftp_file(ftp_handle, item, item, overwrite)
+            else:
+                # quietly skip the file
+                pass
+
+
+def download_ftp_tree(ftp_handle, path, destination, pattern=None, overwrite=False):
+    """
+    Downloads an entire directory tree from an ftp server to the local destination
+    :param ftp_handle: an authenticated ftplib.FTP instance
+    :param path: the folder on the ftp server to download
+    :param destination: the local directory to store the copied folder
+    :param pattern: Python regex pattern, only files that match this pattern will be downloaded.
+    :param overwrite: set to True to force re-download of all files, even if they appear to exist already
+    :param guess_by_extension: It takes a while to explicitly check if every item is a directory or a file.
+        if this flag is set to True, it will assume any file ending with a three character extension ".???" is
+        a file and not a directory. Set to False if some folders may have a "." in their names -4th position.
+    """
+    path = path.lstrip("/")
+    original_directory = os.getcwd()  # remember working directory before function is executed
+    os.chdir(destination)  # change working directory to ftp mirror directory
+    os.mkdir(path)
+
+    _mirror_ftp_dir(
+        ftp_handle,
+        path,
+        pattern=pattern,
+        overwrite=overwrite,
+        )
+
+    os.chdir(original_directory)  # reset working directory to what it was before function exec
+
+
+if __name__ == "__main__":
+    # Example usage mirroring all jpg files in an FTP directory tree.
+    mysite = "some_ftp_site"
+    username = "anonymous"
+    password = None
+    remote_dir = ""
+    local_dir = ""
+    pattern = ".*\.jpg$"
+    ftp = ftplib.FTP(mysite, username, password)
+    download_ftp_tree(ftp, remote_dir, local_dir, pattern=pattern, overwrite=False, guess_by_extension=True)

@@ -1,18 +1,20 @@
-import os
-from ftplib import FTP
-from download_ftp_tree import download_ftp_tree
+#!/usr/bin/python
 
+import ftplib
 
-# def getDirList(dirs):
-#     result = []
-#     for i in dirs:
-#         if i[1]['type'] == 'dir':
-#             result.append(i[0])
-#     return result
-#
+from mylib import *
 
+server = "192.168.1.53"
+user = "esp"
+password = "esp"
+source = "DATA"
+destination = "backup"
+debug_level = 0
 
-ftp = FTP("192.168.1.53", 'esp', 'esp')
-ftp.set_debuglevel(1)
+ftp = ftplib.FTP(server)
+ftp.set_debuglevel(debug_level)
+ftp.login(user, password)
 
-download_ftp_tree(ftp, 'DATA', 'backup/')
+# print(_get_list_of_folder(ftp, 'DATA'))
+
+print_list(get_ls(ftp, 'ARCHIVE/20201005'))

@@ -4,23 +4,44 @@ import re
 
 """
 MIT license: 2017 - Jwely
+
 Example usage:
 ``` python
 import ftplib
 ftp = ftplib.FTP(mysite, username, password)
 download_ftp_tree(ftp, remote_dir, local_dir)
 ```
+
 The code above will look for a directory called "remote_dir" on the ftp host, and then duplicate the
 directory and its entire contents into the "local_dir".
+
 *** Note that if wget is an option, I recommend using that instead ***
+
 """
 
 
-def _is_ftp_dir(name):
+def _is_ftp_dir(ftp_handle, name, guess_by_extension=True):
     """ simply determines if an item listed on the ftp server is a valid directory or not """
-    if name == 'dir':
+
+    # if the name has a "." in the fourth to last position, its probably a file extension
+    # this is MUCH faster than trying to set every file to a working directory, and will work 99% of time.
+    if guess_by_extension is True:
+        if len(name) >= 4:
+            if name[-4] == '.':
+                return False
+
+    original_cwd = ftp_handle.pwd()  # remember the current working directory
+    try:
+        ftp_handle.cwd(name)  # try to set directory to new name
+        ftp_handle.cwd(original_cwd)  # set it back to what it was
         return True
-    else:
+
+    except ftplib.error_perm as e:
+        print(e)
+        return False
+
+    except Exception as e:
+        print(e)
         return False
 
 
@@ -58,24 +79,12 @@ def _file_name_match_patern(pattern, name):
         return bool(re.match(pattern, name))
 
 
-def _get_list_dirs(ftp_handle, name):
-    result = {}
-    ftp_handle.cwd(name)
-    for i in ftp_handle.mlsd():
-        if i[1]['type'] == 'dir':
-            result[i[0]] = True
-        else:
-            result[i[0]] = False
-    ftp_handle.cwd('/')
-    return result
-
-
-def _mirror_ftp_dir(ftp_handle, name, overwrite, pattern):
+def _mirror_ftp_dir(ftp_handle, name, overwrite, guess_by_extension, pattern):
     """ replicates a directory on an ftp server recursively """
-    list = _get_list_dirs(ftp_handle, name)
-    for item in list:
-        if list[item]:
-            _mirror_ftp_dir(ftp_handle, item, overwrite, pattern)
+    list_files_and_folders = _get_list_of_folder(ftp_handle, name)
+    for item in list_files_and_folders:
+        if list_files_and_folders[item]:
+            _mirror_ftp_dir(ftp_handle, item, overwrite, guess_by_extension, pattern)
         else:
             if _file_name_match_patern(pattern, name):
                 _download_ftp_file(ftp_handle, item, item, overwrite)
@@ -83,8 +92,17 @@ def _mirror_ftp_dir(ftp_handle, name, overwrite, pattern):
                 # quietly skip the file
                 pass
 
+def _get_ls(ftp_handle, name):
+    result = {}
+    ftp_handle.cwd(name);
+    for i in ftp_handle.mlsd():
+        if (i[1]['type'] == 'dir'):
+            result[i[0]] = True
+        else:
+            result[i[0]] = False
+    return result
 
-def download_ftp_tree(ftp_handle, path, destination, pattern=None, overwrite=False):
+def download_ftp_tree(ftp_handle, path, destination, pattern=None, overwrite=False, guess_by_extension=True):
     """
     Downloads an entire directory tree from an ftp server to the local destination
     :param ftp_handle: an authenticated ftplib.FTP instance
@@ -99,14 +117,13 @@ def download_ftp_tree(ftp_handle, path, destination, pattern=None, overwrite=Fal
     path = path.lstrip("/")
     original_directory = os.getcwd()  # remember working directory before function is executed
     os.chdir(destination)  # change working directory to ftp mirror directory
-    os.mkdir(path)
 
     _mirror_ftp_dir(
         ftp_handle,
         path,
         pattern=pattern,
         overwrite=overwrite,
-        )
+        guess_by_extension=guess_by_extension)
 
     os.chdir(original_directory)  # reset working directory to what it was before function exec
 
